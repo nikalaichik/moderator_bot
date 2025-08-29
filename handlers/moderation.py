@@ -9,7 +9,7 @@ from config import (
     NIGHT_MODE_CHATS,
     SPAM_MESSAGE_LIMIT,
     SPAM_TIME_WINDOW_SECONDS,
-    SPAM_MUTE_DURATION_MINUTES
+    SPAM_MUTE_DURATION_HOURS
 )
 
 async def check_for_spam(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
@@ -21,44 +21,41 @@ async def check_for_spam(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     chat_id = update.effective_chat.id
     now = datetime.now()
 
-    # --- ИСПРАВЛЕННАЯ И УЛУЧШЕННАЯ ЛОГИКА ---
-
-    # 1. Получаем словарь с сообщениями всех пользователей в этом чате.
-    #    setdefault гарантирует, что он будет создан, если его нет.
+    # Получаем словарь с сообщениями всех пользователей в этом чате.
+    # setdefault гарантирует, что он будет создан, если его нет.
     user_messages = context.chat_data.setdefault('user_messages', {})
 
-    # 2. Получаем список временных меток (timestamp) для текущего пользователя.
-    #    Если пользователя еще нет в словаре, для него создастся пустой список.
+    # Получаем список временных меток (timestamp) для текущего пользователя.
+    # Если пользователя еще нет в словаре, для него создастся пустой список.
     timestamps = user_messages.get(user_id, [])
 
-    # 3. Фильтруем список: создаем новый, содержащий только "свежие" сообщения.
+    # Фильтруем список: создаем новый, содержащий только "свежие" сообщения.
     recent_timestamps = [ts for ts in timestamps if (now - ts).total_seconds() < SPAM_TIME_WINDOW_SECONDS]
 
-    # 4. Добавляем время текущего сообщения.
+    # Добавляем время текущего сообщения.
     recent_timestamps.append(now)
 
-    # 5. Сохраняем обновленный список обратно в хранилище.
+    # Сохраняем обновленный список обратно в хранилище.
     user_messages[user_id] = recent_timestamps
 
-    # --- Отладочная информация (будет видна в вашей консоли) ---
+    # --- Отладочная информация ---
     print(
         f"[SPAM CHECK] User: {user.username} ({user_id}) | "
         f"Messages in window: {len(recent_timestamps)}/{SPAM_MESSAGE_LIMIT}"
     )
-    # -----------------------------------------------------------
 
-    # 6. Проверяем, превысил ли пользователь лимит.
+    # Проверяем, превысил ли пользователь лимит.
     if len(recent_timestamps) >= SPAM_MESSAGE_LIMIT:
         try:
             await context.bot.restrict_chat_member(
                 chat_id=chat_id,
                 user_id=user_id,
                 permissions=ChatPermissions(can_send_messages=False),
-                until_date=datetime.now() + timedelta(minutes=SPAM_MUTE_DURATION_MINUTES)
+                until_date=timedelta(hours=SPAM_MUTE_DURATION_HOURS)
             )
             await context.bot.send_message(
                 chat_id=chat_id,
-                text=f"Пользователь @{user.username} был заглушен на {SPAM_MUTE_DURATION_MINUTES} минут за спам."
+                text=f"Пользователь @{user.username} был заглушен на {SPAM_MUTE_DURATION_HOURS} часов за спам."
             )
             # Очищаем историю сообщений спамера после наказания
             user_messages[user_id] = []
