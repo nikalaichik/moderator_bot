@@ -10,5 +10,5 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def welcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Приветствует новых участников чата."""
-    for member in update.message.new_chat_members:
-        await update.message.reply_text(f"Добро пожаловать в чат, {member.full_name}!")
+    names = ", ".join(m.full_name for m in update.message.new_chat_members)
+    await update.message.reply_text(f"Добро пожаловать в чат, {names}!")

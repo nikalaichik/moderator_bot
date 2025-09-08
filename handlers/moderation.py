@@ -1,15 +1,17 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from telegram import Update, ChatPermissions
 from telegram.ext import ContextTypes
+from telegram.constants import ChatMemberStatus
 import logging
+from .admin import is_admin
 
 # Импортируем настройки из конфига
 from config import (
     FORBIDDEN_WORDS,
-    NIGHT_MODE_CHATS,
     SPAM_MESSAGE_LIMIT,
     SPAM_TIME_WINDOW_SECONDS,
-    SPAM_MUTE_DURATION_HOURS
+    SPAM_MUTE_DURATION_HOURS,
+    bot_state
 )
 
 async def check_for_spam(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
@@ -21,10 +23,11 @@ async def check_for_spam(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     chat_id = update.effective_chat.id
     now = datetime.now()
 
-    # Получаем словарь с сообщениями всех пользователей в этом чате.
-    # setdefault гарантирует, что он будет создан, если его нет.
-    user_messages = context.chat_data.setdefault('user_messages', {})
+    # Получаем или создаем хранилище для сообщений пользователей
+    if 'user_messages' not in context.chat_data:
+        context.chat_data['user_messages'] = {}
 
+    user_messages = context.chat_data['user_messages']
     # Получаем список временных меток (timestamp) для текущего пользователя.
     # Если пользователя еще нет в словаре, для него создастся пустой список.
     timestamps = user_messages.get(user_id, [])
@@ -39,7 +42,7 @@ async def check_for_spam(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     user_messages[user_id] = recent_timestamps
 
     # --- Отладочная информация ---
-    print(
+    logging.info(
         f"[SPAM CHECK] User: {user.username} ({user_id}) | "
         f"Messages in window: {len(recent_timestamps)}/{SPAM_MESSAGE_LIMIT}"
     )
@@ -51,7 +54,7 @@ async def check_for_spam(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 chat_id=chat_id,
                 user_id=user_id,
                 permissions=ChatPermissions(can_send_messages=False),
-                until_date=timedelta(hours=SPAM_MUTE_DURATION_HOURS)
+                until_date=datetime.now(timezone.utc) + timedelta(hours=SPAM_MUTE_DURATION_HOURS)
             )
             await context.bot.send_message(
                 chat_id=chat_id,
@@ -71,15 +74,20 @@ async def delete_forwarded_messages(update: Update, context: ContextTypes.DEFAUL
     user = update.effective_user
     if not message or not user: return
 
-    chat_admins = await context.bot.get_chat_administrators(message.chat_id)
-    admin_ids = {admin.user.id for admin in chat_admins}
-    if user.id in admin_ids: return
+    # Проверяем, является ли пользователь администратором
+    if await is_admin(update, context):
+        return
 
-    await message.delete()
-    await context.bot.send_message(
+    try:
+        await message.delete()
+        username = user.username or user.first_name or "Пользователь"
+        await context.bot.send_message(
         chat_id=message.chat_id,
-        text=f"Сообщение от @{user.username} удалено (пересылка запрещена)."
+        text=f"🚫 Сообщение от {username} удалено (пересылка запрещена).",
+        disable_notification=True
     )
+    except Exception as e:
+        logging.error(f"Не удалось удалить пересланное сообщение: {e}")
 
 async def filter_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Фильтрует входящие текстовые сообщения (новые и отредактированные)."""
@@ -89,32 +97,49 @@ async def filter_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not message or not user or not message.text:
         return
 
-    if message.chat_id in NIGHT_MODE_CHATS:
+    # Пропускаем проверку в чатах с ночным режимом (там свои ограничения)
+    if message.chat_id in bot_state.night_mode_chats:
         return
 
-    chat_admins = await context.bot.get_chat_administrators(message.chat_id)
-    admin_ids = {admin.user.id for admin in chat_admins}
-    if user.id in admin_ids:
+    # Пропускаем администраторов
+    if await is_admin(update, context):
         return
 
-    is_spam = await check_for_spam(update, context)
+    '''is_spam = await check_for_spam(update, context)
     if is_spam:
+        return'''
+
+    # Проверка на спам
+    if await check_for_spam(update, context):
+        try:
+            await message.delete()
+        except:
+            pass  # Сообщение уже может быть удалено
         return
 
     # Проверка на запрещенные слова
     if any(word in message.text.lower() for word in FORBIDDEN_WORDS):
-        await message.delete()
-        await context.bot.send_message(
-            chat_id=message.chat_id,
-            text=f"Сообщение от @{user.username} удалено, т.к. содержит запрещенное слово."
-        )
-        return
+        try:
+            await message.delete()
+            await context.bot.send_message(
+                chat_id=message.chat_id,
+                text=f"🚫 Сообщение от @{user.username} удалено, т.к. содержит запрещенное слово.",
+                disable_notification=True
+            )
+            return
+        except Exception as e:
+            logging.error(f"Не удалось удалить сообщение с запрещенным словом: {e}")
+            return
 
     # Проверка только на ссылки
     if message.entities and any(e.type in ['url', 'text_link'] for e in message.entities):
-        await message.delete()
-        await context.bot.send_message(
-            chat_id=message.chat_id,
-            text=f"Сообщение от @{user.username} удалено (ссылки запрещены)."
-        )
-        return
+        try:
+            await message.delete()
+            await context.bot.send_message(
+                chat_id=message.chat_id,
+                text=f"🚫 Сообщение от @{user.username} удалено (ссылки запрещены).",
+                disable_notification=True
+            )
+            return
+        except Exception as e:
+                logging.error(f"Не удалось удалить сообщение со ссылкой: {e}")

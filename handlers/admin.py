@@ -1,5 +1,5 @@
 import logging
-from datetime import timedelta
+from datetime import timedelta, datetime, timezone
 import config
 from telegram import Update, ChatPermissions
 from telegram.ext import ContextTypes
@@ -24,19 +24,25 @@ async def kick_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     Использование: ответьте на сообщение пользователя командой /kick
     """
     if not await is_admin(update, context):
-        await update.message.reply_text("Эта команда доступна только администраторам.")
+        await update.message.reply_text("❌ Эта команда доступна только администраторам.")
         return
     # Проверяем, что команда используется в ответ на сообщение
     if not update.message.reply_to_message:
-        await update.message.reply_text("Эту команду нужно использовать в ответ на сообщение пользователя.")
+        await update.message.reply_text("❌ Эту команду нужно использовать в ответ на сообщение пользователя.")
         return
 
     user_to_kick = update.message.reply_to_message.from_user
     chat_id = update.effective_chat.id
 
     try:
+        # Проверяем, что мы не пытаемся кикнуть администратора
+        target_member = await context.bot.get_chat_member(chat_id, user_to_kick.id)
+        if target_member.status in [ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER]:
+            await update.message.reply_text("❌ Нельзя исключить администратора.")
+            return
+
         await context.bot.unban_chat_member(chat_id=chat_id, user_id=user_to_kick.id)
-        await update.message.reply_text(f"Пользователь {user_to_kick.full_name} был исключен из чата.")
+        await update.message.reply_text(f"👋 Пользователь {user_to_kick.full_name} был исключен из чата.")
     except Exception as e:
         await update.message.reply_text(f"Не удалось исключить пользователя. Ошибка: {e}")
 
@@ -47,18 +53,24 @@ async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     Использование: ответьте на сообщение пользователя командой /ban
     """
     if not await is_admin(update, context):
-        await update.message.reply_text("Эта команда доступна только администраторам.")
+        await update.message.reply_text("❌ Эта команда доступна только администраторам.")
         return
     if not update.message.reply_to_message:
-        await update.message.reply_text("Эту команду нужно использовать в ответ на сообщение пользователя.")
+        await update.message.reply_text("❌ Эту команду нужно использовать в ответ на сообщение пользователя.")
         return
 
     user_to_ban = update.message.reply_to_message.from_user
     chat_id = update.effective_chat.id
 
     try:
+        # Проверяем, что мы не пытаемся забанить администратора
+        target_member = await context.bot.get_chat_member(chat_id, user_to_ban.id)
+        if target_member.status in [ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER]:
+            await update.message.reply_text("❌ Нельзя забанить администратора.")
+            return
+
         await context.bot.ban_chat_member(chat_id=chat_id, user_id=user_to_ban.id)
-        await update.message.reply_text(f"Пользователь {user_to_ban.full_name} забанен.")
+        await update.message.reply_text(f"🔨 Пользователь {user_to_ban.full_name} забанен.")
     except Exception as e:
         await update.message.reply_text(f"Не удалось забанить пользователя. Ошибка: {e}")
 
@@ -66,12 +78,17 @@ async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def mute_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Запрещает пользователю отправлять сообщения на определенное время."""
     if not await is_admin(update, context):
-        await update.message.reply_text("Эта команда доступна только администраторам.")
+        await update.message.reply_text("❌ Эта команда доступна только администраторам.")
+        return
+
+    if not update.message.reply_to_message:
+        await update.message.reply_text("❌ Используйте команду в ответ на сообщение пользователя.")
         return
 
     user_to_mute = update.message.reply_to_message.from_user
     chat_id = update.effective_chat.id
     minutes = 60
+    until = datetime.now(timezone.utc) + timedelta(minutes=minutes)
     if context.args and context.args[0].isdigit():
         minutes = int(context.args[0])
 
@@ -81,7 +98,7 @@ async def mute_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
             chat_id=chat_id,
             user_id=user_to_mute.id,
             permissions=ChatPermissions(can_send_messages=False),
-            until_date=timedelta(minutes=minutes)
+            until_date=until
         )
         await update.message.reply_text(f"Пользователь {user_to_mute.full_name} лишен права голоса на {minutes} минут.")
     except Exception as e:
@@ -109,12 +126,12 @@ async def unmute_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.restrict_chat_member(
             chat_id=chat_id,
             user_id=user_to_unmute.id,
-            permissions={
-                'can_send_messages': True,
-                'can_send_media_messages': True,
-                'can_send_other_messages': True,
-                'can_add_web_page_previews': True
-            }
+            permissions=ChatPermissions(
+                can_send_messages = True,
+                can_send_media_messages = True,
+                can_send_other_messages = True,
+                can_add_web_page_previews = True
+            )
         )
         await update.message.reply_text(f"С пользователя {user_to_unmute.full_name} сняты ограничения.")
     except Exception as e:

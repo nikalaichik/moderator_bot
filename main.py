@@ -27,10 +27,10 @@ def main():
         moderation.filter_messages,
         block=False # block=False позволяет другим обработчикам тоже сработать, если нужно
     ))
-    application.add_handler(MessageHandler(
+    '''application.add_handler(MessageHandler(
         filters.TEXT & (~filters.COMMAND),
         moderation.filter_messages
-    ))
+    ))'''
 
     application.add_handler(MessageHandler(
         filters.FORWARDED,
@@ -41,7 +41,6 @@ def main():
     application.add_handler(CommandHandler('night_mode_off', night_mode.night_mode_off))
 
     # Команды администраторов
-    # application.add_handler(CommandHandler('kick', admin.kick_user))
     application.add_handler(CommandHandler('kick', admin.kick_user, filters=filters.REPLY))
     application.add_handler(CommandHandler('ban', admin.ban_user, filters=filters.REPLY))
     application.add_handler(CommandHandler('mute', admin.mute_user, filters=filters.REPLY))
