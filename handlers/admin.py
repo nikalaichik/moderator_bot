@@ -112,11 +112,11 @@ async def unmute_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
 
     if not await is_admin(update, context):
-        await update.message.reply_text("Эта команда доступна только администраторам.")
+        await update.message.reply_text("❌ Эта команда доступна только администраторам.")
         return
 
     if not update.message.reply_to_message:
-        await update.message.reply_text("Эту команду нужно использовать в ответ на сообщение пользователя.")
+        await update.message.reply_text("❌ Эту команду нужно использовать в ответ на сообщение пользователя.")
         return
 
     user_to_unmute = update.message.reply_to_message.from_user

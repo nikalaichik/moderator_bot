@@ -41,10 +41,10 @@ def main():
     application.add_handler(CommandHandler('night_mode_off', night_mode.night_mode_off))
 
     # Команды администраторов
-    application.add_handler(CommandHandler('kick', admin.kick_user, filters=filters.REPLY))
-    application.add_handler(CommandHandler('ban', admin.ban_user, filters=filters.REPLY))
-    application.add_handler(CommandHandler('mute', admin.mute_user, filters=filters.REPLY))
-    application.add_handler(CommandHandler('unmute', admin.unmute_user, filters=filters.REPLY))
+    application.add_handler(CommandHandler('kick', admin.kick_user))
+    application.add_handler(CommandHandler('ban', admin.ban_user))
+    application.add_handler(CommandHandler('mute', admin.mute_user))
+    application.add_handler(CommandHandler('unmute', admin.unmute_user))
     application.add_handler(CommandHandler('reload_words', admin.reload_words))
 
     # Запускаем бота
